@@ -43,6 +43,8 @@ public:
       : Node("t265_node"), tf_broadcaster_(this), static_tf_broadcaster_(this)
   {
     publish_fisheye_ = this->declare_parameter<bool>("publish_fisheye", false);
+    enable_pose_jumping_ = this->declare_parameter<bool>("enable_pose_jumping", false);
+    enable_relocalization_ = this->declare_parameter<bool>("enable_relocalization", false);
 
     //begin_ = std::chrono::steady_clock::now();
     // Define configuration to start stream from t265 camera
@@ -56,6 +58,7 @@ public:
     }
     // Start pipeline with chosen configuration
     pipe_.start(cfg_);
+    ConfigurePoseSensorOptions();
 
     // Publishers
     odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("rs_t265/odom", 10);
@@ -75,6 +78,32 @@ public:
   }
 
 private:
+  void ConfigurePoseSensorOptions()
+  {
+    try
+    {
+      auto active_profile = pipe_.get_active_profile();
+      auto device = active_profile.get_device();
+
+      for (auto &&sensor : device.query_sensors())
+      {
+        if (sensor.supports(RS2_OPTION_ENABLE_POSE_JUMPING))
+        {
+          sensor.set_option(RS2_OPTION_ENABLE_POSE_JUMPING, enable_pose_jumping_ ? 1.0f : 0.0f);
+        }
+
+        if (sensor.supports(RS2_OPTION_ENABLE_RELOCALIZATION))
+        {
+          sensor.set_option(RS2_OPTION_ENABLE_RELOCALIZATION, enable_relocalization_ ? 1.0f : 0.0f);
+        }
+      }
+    }
+    catch (const rs2::error &e)
+    {
+      RCLCPP_WARN(logger_, "Could not configure T265 pose options: %s", e.what());
+    }
+  }
+
   geometry_msgs::msg::Transform ToRosTransform(const rs2_extrinsics &extrinsics)
   {
     geometry_msgs::msg::Transform transform;
@@ -301,6 +330,8 @@ private:
   geometry_msgs::msg::TransformStamped tf_static_;
   sensor_msgs::msg::Imu imu_msg_; 
   bool publish_fisheye_;
+  bool enable_pose_jumping_;
+  bool enable_relocalization_;
   bool publish_transform_to_depth_;
   // Declare RealSense pipeline, encapsulating the actual device and sensors
   rs2::pipeline pipe_;

@@ -85,6 +85,11 @@ Run the node with the following command:
 ros2 run realsense_ros2 rs_t265_node
 ```
 
+Optional T265 parameters:
+
+* `enable_pose_jumping` (default: `false`): Enable/disable T265 pose-jump handling.
+* `enable_relocalization` (default: `false`): Enable/disable T265 relocalization.
+
 To also publish fisheye images from T265, run:
 
 ```bash
@@ -114,6 +119,11 @@ In one terminal, launch the two cameras:
 ros2 launch realsense_ros2 realsense_launch.py
 ```
 ![rviz][image2]
+
+To launch cameras with RViz2:
+```bash
+ros2 launch realsense_ros2 realsense_rviz_launch.py
+```
 
 ### T265 tracking and D435 depth cameras simultaneously with SLAM-TOOLBOX 2D SLAM
 In one terminal, launch the 2 cameras:
