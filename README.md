@@ -90,6 +90,8 @@ Optional T265 parameters:
 * `enable_pose_jumping` (default: `false`): Enable/disable T265 pose-jump handling.
 * `enable_relocalization` (default: `false`): Enable/disable T265 relocalization.
 
+Fisheye TF correction is applied internally as a fixed rotation (roll `+90` and yaw `-90`).
+
 To also publish fisheye images from T265, run:
 
 ```bash

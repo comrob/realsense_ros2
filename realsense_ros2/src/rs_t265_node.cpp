@@ -108,23 +108,38 @@ private:
   {
     geometry_msgs::msg::Transform transform;
 
-    // Keep the same RealSense->ROS axis convention used for pose in this node.
-    transform.translation.x = -extrinsics.translation[2];
-    transform.translation.y = -extrinsics.translation[0];
-    transform.translation.z = extrinsics.translation[1];
+    // Basis change used in this node for pose stream: [x y z]_ros = B * [x y z]_rs.
+    const tf2::Matrix3x3 B(
+      0.0, 0.0, -1.0,
+      -1.0, 0.0, 0.0,
+      0.0, 1.0, 0.0);
 
+    // librealsense stores rs2_extrinsics::rotation in column-major order.
     tf2::Matrix3x3 rs_R(
-        extrinsics.rotation[0], extrinsics.rotation[1], extrinsics.rotation[2],
-        extrinsics.rotation[3], extrinsics.rotation[4], extrinsics.rotation[5],
-        extrinsics.rotation[6], extrinsics.rotation[7], extrinsics.rotation[8]);
+      extrinsics.rotation[0], extrinsics.rotation[3], extrinsics.rotation[6],
+      extrinsics.rotation[1], extrinsics.rotation[4], extrinsics.rotation[7],
+      extrinsics.rotation[2], extrinsics.rotation[5], extrinsics.rotation[8]);
 
-    tf2::Quaternion rs_q;
-    rs_R.getRotation(rs_q);
+    // Proper rotation conversion between coordinate conventions.
+    const tf2::Matrix3x3 ros_R = B * rs_R * B.transpose();
 
-    transform.rotation.x = -rs_q.z();
-    transform.rotation.y = -rs_q.x();
-    transform.rotation.z = rs_q.y();
-    transform.rotation.w = rs_q.w();
+    const tf2::Vector3 rs_t(
+      extrinsics.translation[0],
+      extrinsics.translation[1],
+      extrinsics.translation[2]);
+    const tf2::Vector3 ros_t = B * rs_t;
+
+    transform.translation.x = ros_t.x();
+    transform.translation.y = ros_t.y();
+    transform.translation.z = ros_t.z();
+
+    tf2::Quaternion ros_q;
+    ros_R.getRotation(ros_q);
+
+    transform.rotation.x = ros_q.x();
+    transform.rotation.y = ros_q.y();
+    transform.rotation.z = ros_q.z();
+    transform.rotation.w = ros_q.w();
     return transform;
   }
 
@@ -145,12 +160,14 @@ private:
       tf_fisheye1.header.frame_id = "t265_frame";
       tf_fisheye1.child_frame_id = "t265_fisheye1_frame";
       tf_fisheye1.transform = ToRosTransform(extr_pose_to_fisheye1);
+      ApplyFisheyeRotationCorrection(tf_fisheye1.transform);
 
       geometry_msgs::msg::TransformStamped tf_fisheye2;
       tf_fisheye2.header.stamp = rclcpp::Clock().now();
       tf_fisheye2.header.frame_id = "t265_frame";
       tf_fisheye2.child_frame_id = "t265_fisheye2_frame";
       tf_fisheye2.transform = ToRosTransform(extr_pose_to_fisheye2);
+      ApplyFisheyeRotationCorrection(tf_fisheye2.transform);
 
       static_tf_broadcaster_.sendTransform(tf_fisheye1);
       static_tf_broadcaster_.sendTransform(tf_fisheye2);
@@ -159,6 +176,28 @@ private:
     {
       RCLCPP_WARN(logger_, "Could not publish fisheye static TF from RealSense extrinsics: %s", e.what());
     }
+  }
+
+  void ApplyFisheyeRotationCorrection(geometry_msgs::msg::Transform &transform)
+  {
+    tf2::Quaternion q_current(
+        transform.rotation.x,
+        transform.rotation.y,
+        transform.rotation.z,
+        transform.rotation.w);
+
+    tf2::Quaternion q_correction;
+    const double roll_rad = 90.0 * M_PI / 180.0;
+    const double yaw_rad = -90.0 * M_PI / 180.0;
+    q_correction.setRPY(roll_rad, 0.0, yaw_rad);
+
+    tf2::Quaternion q_corrected = q_current * q_correction;
+    q_corrected.normalize();
+
+    transform.rotation.x = q_corrected.x();
+    transform.rotation.y = q_corrected.y();
+    transform.rotation.z = q_corrected.z();
+    transform.rotation.w = q_corrected.w();
   }
 
   std::string DistortionModelToRos(rs2_distortion model)
