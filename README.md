@@ -91,6 +91,10 @@ To also publish fisheye images from T265, run:
 ros2 run realsense_ros2 rs_t265_node --ros-args -p publish_fisheye:=true
 ```
 
+When `publish_fisheye` is enabled, static transforms from `t265_frame` to
+`t265_fisheye1_frame` and `t265_fisheye2_frame` are also published using
+RealSense API extrinsics.
+
 ### D435 depth camera only
 Run the node with the following command:
 

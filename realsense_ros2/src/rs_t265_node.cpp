@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cmath>
 #include <tf2_ros/transform_broadcaster.hpp>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <tf2/transform_datatypes.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2/convert.h>
@@ -39,7 +40,7 @@ class T265Node : public rclcpp::Node
 {
 public:
   T265Node()
-      : Node("t265_node"), tf_broadcaster_(this)
+      : Node("t265_node"), tf_broadcaster_(this), static_tf_broadcaster_(this)
   {
     publish_fisheye_ = this->declare_parameter<bool>("publish_fisheye", false);
 
@@ -65,6 +66,8 @@ public:
       fisheye2_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("rs_t265/fisheye2/image_raw", 10);
       fisheye1_camera_info_publisher_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("rs_t265/fisheye1/camera_info", 10);
       fisheye2_camera_info_publisher_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("rs_t265/fisheye2/camera_info", 10);
+
+      PublishFisheyeStaticTransforms();
     }
     // Timer used to publish camera's odometry periodically
     timer_ = this->create_wall_timer(
@@ -72,6 +75,63 @@ public:
   }
 
 private:
+  geometry_msgs::msg::Transform ToRosTransform(const rs2_extrinsics &extrinsics)
+  {
+    geometry_msgs::msg::Transform transform;
+
+    // Keep the same RealSense->ROS axis convention used for pose in this node.
+    transform.translation.x = -extrinsics.translation[2];
+    transform.translation.y = -extrinsics.translation[0];
+    transform.translation.z = extrinsics.translation[1];
+
+    tf2::Matrix3x3 rs_R(
+        extrinsics.rotation[0], extrinsics.rotation[1], extrinsics.rotation[2],
+        extrinsics.rotation[3], extrinsics.rotation[4], extrinsics.rotation[5],
+        extrinsics.rotation[6], extrinsics.rotation[7], extrinsics.rotation[8]);
+
+    tf2::Quaternion rs_q;
+    rs_R.getRotation(rs_q);
+
+    transform.rotation.x = -rs_q.z();
+    transform.rotation.y = -rs_q.x();
+    transform.rotation.z = rs_q.y();
+    transform.rotation.w = rs_q.w();
+    return transform;
+  }
+
+  void PublishFisheyeStaticTransforms()
+  {
+    try
+    {
+      auto active_profile = pipe_.get_active_profile();
+      auto pose_profile = active_profile.get_stream(RS2_STREAM_POSE).as<rs2::stream_profile>();
+      auto fisheye1_profile = active_profile.get_stream(RS2_STREAM_FISHEYE, 1).as<rs2::stream_profile>();
+      auto fisheye2_profile = active_profile.get_stream(RS2_STREAM_FISHEYE, 2).as<rs2::stream_profile>();
+
+      auto extr_pose_to_fisheye1 = pose_profile.get_extrinsics_to(fisheye1_profile);
+      auto extr_pose_to_fisheye2 = pose_profile.get_extrinsics_to(fisheye2_profile);
+
+      geometry_msgs::msg::TransformStamped tf_fisheye1;
+      tf_fisheye1.header.stamp = rclcpp::Clock().now();
+      tf_fisheye1.header.frame_id = "t265_frame";
+      tf_fisheye1.child_frame_id = "t265_fisheye1_frame";
+      tf_fisheye1.transform = ToRosTransform(extr_pose_to_fisheye1);
+
+      geometry_msgs::msg::TransformStamped tf_fisheye2;
+      tf_fisheye2.header.stamp = rclcpp::Clock().now();
+      tf_fisheye2.header.frame_id = "t265_frame";
+      tf_fisheye2.child_frame_id = "t265_fisheye2_frame";
+      tf_fisheye2.transform = ToRosTransform(extr_pose_to_fisheye2);
+
+      static_tf_broadcaster_.sendTransform(tf_fisheye1);
+      static_tf_broadcaster_.sendTransform(tf_fisheye2);
+    }
+    catch (const rs2::error &e)
+    {
+      RCLCPP_WARN(logger_, "Could not publish fisheye static TF from RealSense extrinsics: %s", e.what());
+    }
+  }
+
   std::string DistortionModelToRos(rs2_distortion model)
   {
     if (model == RS2_DISTORTION_FTHETA || model == RS2_DISTORTION_KANNALA_BRANDT4)
@@ -255,6 +315,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr fisheye1_camera_info_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr fisheye2_camera_info_publisher_;
   tf2_ros::TransformBroadcaster tf_broadcaster_;
+  tf2_ros::StaticTransformBroadcaster static_tf_broadcaster_;
 };
 
 int main(int argc, char **argv)
