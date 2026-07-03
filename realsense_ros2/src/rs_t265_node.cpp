@@ -15,6 +15,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/core/core.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
@@ -62,6 +63,8 @@ public:
     {
       fisheye1_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("rs_t265/fisheye1/image_raw", 10);
       fisheye2_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("rs_t265/fisheye2/image_raw", 10);
+      fisheye1_camera_info_publisher_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("rs_t265/fisheye1/camera_info", 10);
+      fisheye2_camera_info_publisher_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("rs_t265/fisheye2/camera_info", 10);
     }
     // Timer used to publish camera's odometry periodically
     timer_ = this->create_wall_timer(
@@ -69,6 +72,46 @@ public:
   }
 
 private:
+  std::string DistortionModelToRos(rs2_distortion model)
+  {
+    if (model == RS2_DISTORTION_FTHETA || model == RS2_DISTORTION_KANNALA_BRANDT4)
+    {
+      return "equidistant";
+    }
+    return "plumb_bob";
+  }
+
+  sensor_msgs::msg::CameraInfo BuildCameraInfo(const rs2::video_stream_profile &profile, const std::string &frame_id, const rclcpp::Time &stamp)
+  {
+    auto intrinsics = profile.get_intrinsics();
+
+    sensor_msgs::msg::CameraInfo info;
+    info.header.stamp = stamp;
+    info.header.frame_id = frame_id;
+    info.width = intrinsics.width;
+    info.height = intrinsics.height;
+    info.distortion_model = DistortionModelToRos(intrinsics.model);
+    info.d = {
+        intrinsics.coeffs[0],
+        intrinsics.coeffs[1],
+        intrinsics.coeffs[2],
+        intrinsics.coeffs[3],
+        intrinsics.coeffs[4]};
+    info.k = {
+        intrinsics.fx, 0.0, intrinsics.ppx,
+        0.0, intrinsics.fy, intrinsics.ppy,
+        0.0, 0.0, 1.0};
+    info.r = {
+        1.0, 0.0, 0.0,
+        0.0, 1.0, 0.0,
+        0.0, 0.0, 1.0};
+    info.p = {
+        intrinsics.fx, 0.0, intrinsics.ppx, 0.0,
+        0.0, intrinsics.fy, intrinsics.ppy, 0.0,
+        0.0, 0.0, 1.0, 0.0};
+    return info;
+  }
+
   void TimerCallback()
   {
     //std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
@@ -103,6 +146,7 @@ private:
     {
       if (rs2::video_frame fisheye1_frame = frameset.get_fisheye_frame(1))
       {
+        const auto stamp = rclcpp::Clock().now();
         cv::Mat fisheye1_image(
             fisheye1_frame.get_height(),
             fisheye1_frame.get_width(),
@@ -111,13 +155,17 @@ private:
             fisheye1_frame.get_stride_in_bytes());
 
         auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", fisheye1_image).toImageMsg();
-        msg->header.stamp = rclcpp::Clock().now();
+        msg->header.stamp = stamp;
         msg->header.frame_id = "t265_fisheye1_frame";
         fisheye1_publisher_->publish(*msg);
+
+        auto fisheye1_profile = fisheye1_frame.get_profile().as<rs2::video_stream_profile>();
+        fisheye1_camera_info_publisher_->publish(BuildCameraInfo(fisheye1_profile, "t265_fisheye1_frame", stamp));
       }
 
       if (rs2::video_frame fisheye2_frame = frameset.get_fisheye_frame(2))
       {
+        const auto stamp = rclcpp::Clock().now();
         cv::Mat fisheye2_image(
             fisheye2_frame.get_height(),
             fisheye2_frame.get_width(),
@@ -126,9 +174,12 @@ private:
             fisheye2_frame.get_stride_in_bytes());
 
         auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", fisheye2_image).toImageMsg();
-        msg->header.stamp = rclcpp::Clock().now();
+        msg->header.stamp = stamp;
         msg->header.frame_id = "t265_fisheye2_frame";
         fisheye2_publisher_->publish(*msg);
+
+        auto fisheye2_profile = fisheye2_frame.get_profile().as<rs2::video_stream_profile>();
+        fisheye2_camera_info_publisher_->publish(BuildCameraInfo(fisheye2_profile, "t265_fisheye2_frame", stamp));
       }
     }
 
@@ -201,6 +252,8 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr fisheye1_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr fisheye2_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr fisheye1_camera_info_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr fisheye2_camera_info_publisher_;
   tf2_ros::TransformBroadcaster tf_broadcaster_;
 };
 

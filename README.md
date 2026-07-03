@@ -144,6 +144,8 @@ ros2 launch realsense_ros2 slam_rtabmap_launch.py
 * rs_t265/imu [sensor_msgs/Imu]: Imu data.
 * rs_t265/fisheye1/image_raw [sensor_msgs/Image]: Left fisheye image (only published if *publish_fisheye* is set to true).
 * rs_t265/fisheye2/image_raw [sensor_msgs/Image]: Right fisheye image (only published if *publish_fisheye* is set to true).
+* rs_t265/fisheye1/camera_info [sensor_msgs/CameraInfo]: Calibration/intrinsics for left fisheye (only published if *publish_fisheye* is set to true).
+* rs_t265/fisheye2/camera_info [sensor_msgs/CameraInfo]: Calibration/intrinsics for right fisheye (only published if *publish_fisheye* is set to true).
 * tf
 
 
