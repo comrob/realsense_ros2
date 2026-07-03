@@ -14,6 +14,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <cv_bridge/cv_bridge.hpp>
+#include <opencv2/core/core.hpp>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <librealsense2/rs.hpp>
@@ -37,17 +40,29 @@ public:
   T265Node()
       : Node("t265_node"), tf_broadcaster_(this)
   {
+    publish_fisheye_ = this->declare_parameter<bool>("publish_fisheye", false);
+
     //begin_ = std::chrono::steady_clock::now();
     // Define configuration to start stream from t265 camera
     cfg_.enable_stream(RS2_STREAM_ACCEL);
     cfg_.enable_stream(RS2_STREAM_GYRO);
     cfg_.enable_stream(RS2_STREAM_POSE);
+    if (publish_fisheye_)
+    {
+      cfg_.enable_stream(RS2_STREAM_FISHEYE, 1, 848, 800, RS2_FORMAT_Y8, 30);
+      cfg_.enable_stream(RS2_STREAM_FISHEYE, 2, 848, 800, RS2_FORMAT_Y8, 30);
+    }
     // Start pipeline with chosen configuration
     pipe_.start(cfg_);
 
     // Publishers
     odom_publisher_ = this->create_publisher<nav_msgs::msg::Odometry>("rs_t265/odom", 10);
     imu_publisher_ = this->create_publisher<sensor_msgs::msg::Imu>("rs_t265/imu", 10);
+    if (publish_fisheye_)
+    {
+      fisheye1_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("rs_t265/fisheye1/image_raw", 10);
+      fisheye2_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("rs_t265/fisheye2/image_raw", 10);
+    }
     // Timer used to publish camera's odometry periodically
     timer_ = this->create_wall_timer(
         10ms, std::bind(&T265Node::TimerCallback, this)); //30ms
@@ -82,6 +97,39 @@ private:
       imu_msg_.linear_acceleration.y = accel_sample.y;
       imu_msg_.linear_acceleration.z = accel_sample.z;
       imu_publisher_->publish(imu_msg_);
+    }
+
+    if (publish_fisheye_)
+    {
+      if (rs2::video_frame fisheye1_frame = frameset.get_fisheye_frame(1))
+      {
+        cv::Mat fisheye1_image(
+            fisheye1_frame.get_height(),
+            fisheye1_frame.get_width(),
+            CV_8UC1,
+            const_cast<void *>(fisheye1_frame.get_data()),
+            fisheye1_frame.get_stride_in_bytes());
+
+        auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", fisheye1_image).toImageMsg();
+        msg->header.stamp = rclcpp::Clock().now();
+        msg->header.frame_id = "t265_fisheye1_frame";
+        fisheye1_publisher_->publish(*msg);
+      }
+
+      if (rs2::video_frame fisheye2_frame = frameset.get_fisheye_frame(2))
+      {
+        cv::Mat fisheye2_image(
+            fisheye2_frame.get_height(),
+            fisheye2_frame.get_width(),
+            CV_8UC1,
+            const_cast<void *>(fisheye2_frame.get_data()),
+            fisheye2_frame.get_stride_in_bytes());
+
+        auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "mono8", fisheye2_image).toImageMsg();
+        msg->header.stamp = rclcpp::Clock().now();
+        msg->header.frame_id = "t265_fisheye2_frame";
+        fisheye2_publisher_->publish(*msg);
+      }
     }
 
     
@@ -141,6 +189,7 @@ private:
   rclcpp::Logger logger_ = rclcpp::get_logger("T265Node");
   geometry_msgs::msg::TransformStamped tf_static_;
   sensor_msgs::msg::Imu imu_msg_; 
+  bool publish_fisheye_;
   bool publish_transform_to_depth_;
   // Declare RealSense pipeline, encapsulating the actual device and sensors
   rs2::pipeline pipe_;
@@ -150,6 +199,8 @@ private:
   // Publishers
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr odom_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr fisheye1_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr fisheye2_publisher_;
   tf2_ros::TransformBroadcaster tf_broadcaster_;
 };
 

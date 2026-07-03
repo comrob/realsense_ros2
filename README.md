@@ -85,6 +85,12 @@ Run the node with the following command:
 ros2 run realsense_ros2 rs_t265_node
 ```
 
+To also publish fisheye images from T265, run:
+
+```bash
+ros2 run realsense_ros2 rs_t265_node --ros-args -p publish_fisheye:=true
+```
+
 ### D435 depth camera only
 Run the node with the following command:
 
@@ -136,6 +142,8 @@ ros2 launch realsense_ros2 slam_rtabmap_launch.py
 ### rs_t265_node
 * rs_t265/odom [nav_msgs/Odometry]: Pose and speeds of the t265 tracking camera.
 * rs_t265/imu [sensor_msgs/Imu]: Imu data.
+* rs_t265/fisheye1/image_raw [sensor_msgs/Image]: Left fisheye image (only published if *publish_fisheye* is set to true).
+* rs_t265/fisheye2/image_raw [sensor_msgs/Image]: Right fisheye image (only published if *publish_fisheye* is set to true).
 * tf
 
 
