@@ -12,15 +12,15 @@
 
 
 # realsense_ros2
-Ros 2 wrapper for intel realsense cameras d435 and t265.
+ROS 2 wrapper targeted for the Intel RealSense T265 tracking camera on ROS 2 Jazzy.
 
 This wrapper's implementation is specially developed with the objective of running it in Nvidia's Jetson Nano, however it should also work on any other platform running Ubuntu 18.04 and 20.04.
 
 By running this wrapper you would be able to obtain:
 
 * Pose data from the realsense t265 tracking camera
-* Pointcloud from the realsense d435 depth stereo camera
-* Depth Image from the realsense d435 depth stereo camera
+
+Legacy/optional support in this repository also includes D435 depth camera nodes.
 
 **Tested on Jetson Nano:
 L4T 32.4.3 [ JetPack 4.4 ]
@@ -32,10 +32,29 @@ L4T 32.4.3 [ JetPack 4.4 ]
 ROS2 Foxy**
 
 ## Requirements
-* ROS2 eloquent or foxy
+* ROS2 jazzy
+* Ubuntu 24.04
 
 ## Installation
-1. Install librealsense2 as per the official [instructions](https://github.com/IntelRealSense/librealsense/blob/master/doc/distribution_linux.md).
+1. Install librealsense2 of the version 2.50.0 from sources:
+
+    ```bash
+    # dependencies
+    sudo apt update && sudo apt upgrade
+    sudo apt install git wget cmake build-essential libssl-dev libusb-1.0-0-dev libudev-dev pkg-config libgtk-3-dev libglfw3-dev libgl1-mesa-dev libglu1-mesa-dev
+
+    # download librealsense2 version 2.50.0
+    git clone https://github.com/realsenseai/librealsense
+    cd librealsense
+    git checkout v2.50.0 
+
+    # build and install
+    mkdir build && cd build
+    cmake .. -DFORCE_RSUSB_BACKEND=ON -DBUILD_EXAMPLES=true -DBUILD_WITH_CUDA=OFF
+    make -j$(nproc)
+    sudo make install
+    ```
+
 2. Connect your cameras and check they are working propperly by openning a new terminal and typing:
 
     ```bash
@@ -59,6 +78,13 @@ ROS2 Foxy**
     ```
 
 ## Run
+### T265 tracking camera (primary target)
+Run the node with the following command:
+
+```bash
+ros2 run realsense_ros2 rs_t265_node
+```
+
 ### D435 depth camera only
 Run the node with the following command:
 
@@ -72,12 +98,6 @@ ros2 run realsense_ros2 rs_d435_node --ros-args -p is_color:=true -p publish_dep
 * The *fps* parameter is used to modify the rate at which the node publishes the pointcloud and the depth image.
 
 
-### T265 tracking camera only
-Run the node with the following command:
-
-```bash
-ros2 run realsense_ros2 rs_t265_node
-```
 ### T265 tracking and D435 depth cameras simultaneously
 In one terminal, launch the two cameras:
 ```bash
